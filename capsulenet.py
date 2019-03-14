@@ -102,17 +102,17 @@ def train(model, data, args):
     (x_train, y_train), (x_test, y_test) = data
 
     # callbacks
-    log = callbacks.CSVLogger(args.save_dir + '/log.csv')
-    tb = callbacks.TensorBoard(log_dir=args.save_dir + '/tensorboard-logs',
-                               batch_size=args.batch_size, histogram_freq=int(args.debug))
-    checkpoint = callbacks.ModelCheckpoint(args.save_dir + '/weights-{epoch:02d}.h5', monitor='val_capsnet_acc',
+    log = callbacks.CSVLogger(args['save_dir'] + '/log.csv')
+    tb = callbacks.TensorBoard(log_dir=args['save_dir'] + '/tensorboard-logs',
+                               batch_size=args['batch_size'], histogram_freq=int(args['debug']))
+    checkpoint = callbacks.ModelCheckpoint(args['save_dir'] + '/weights-{epoch:02d}.h5', monitor='val_capsnet_acc',
                                            save_best_only=True, save_weights_only=True, verbose=1)
-    lr_decay = callbacks.LearningRateScheduler(schedule=lambda epoch: args.lr * (args.lr_decay ** epoch))
+    lr_decay = callbacks.LearningRateScheduler(schedule=lambda epoch: args['lr'] * (args['lr_decay'] ** epoch))
 
     # compile the model
-    model.compile(optimizer=optimizers.Adam(lr=args.lr),
+    model.compile(optimizer=optimizers.Adam(lr=args['lr']),
                   loss=[margin_loss, 'mse'],
-                  loss_weights=[1., args.lam_recon],
+                  loss_weights=[1., args['lam_recon']],
                   metrics={'capsnet': 'accuracy'})
 
     """
@@ -131,18 +131,18 @@ def train(model, data, args):
             yield ([x_batch, y_batch], [y_batch, x_batch])
 
     # Training with data augmentation. If shift_fraction=0., also no augmentation.
-    model.fit_generator(generator=train_generator(x_train, y_train, args.batch_size, args.shift_fraction),
-                        steps_per_epoch=int(y_train.shape[0] / args.batch_size),
-                        epochs=args.epochs,
+    model.fit_generator(generator=train_generator(x_train, y_train, args['batch_size'], args['shift_fraction']),
+                        steps_per_epoch=int(y_train.shape[0] / args['batch_size']),
+                        epochs=args['epochs'],
                         validation_data=[[x_test, y_test], [y_test, x_test]],
                         callbacks=[log, tb, checkpoint, lr_decay])
     # End: Training with data augmentation -----------------------------------------------------------------------#
 
-    model.save_weights(args.save_dir + '/trained_model.h5')
-    print('Trained model saved to \'%s/trained_model.h5\'' % args.save_dir)
+    model.save_weights(args['save_dir'] + '/trained_model.h5')
+    print('Trained model saved to \'%s/trained_model.h5\'' % args['save_dir'])
 
     from utils import plot_log
-    plot_log(args.save_dir + '/log.csv', show=True)
+    plot_log(args['save_dir'] + '/log.csv', show=True)
 
     return model
 
@@ -155,18 +155,18 @@ def test(model, data, args):
 
     img = combine_images(np.concatenate([x_test[:50],x_recon[:50]]))
     image = img * 255
-    Image.fromarray(image.astype(np.uint8)).save(args.save_dir + "/real_and_recon.png")
+    Image.fromarray(image.astype(np.uint8)).save(args['save_dir'] + "/real_and_recon.png")
     print()
-    print('Reconstructed images are saved to %s/real_and_recon.png' % args.save_dir)
+    print('Reconstructed images are saved to %s/real_and_recon.png' % args['save_dir'])
     print('-' * 30 + 'End: test' + '-' * 30)
-    plt.imshow(plt.imread(args.save_dir + "/real_and_recon.png"))
+    plt.imshow(plt.imread(args['save_dir'] + "/real_and_recon.png"))
     plt.show()
 
 
 def manipulate_latent(model, data, args):
     print('-'*30 + 'Begin: manipulate' + '-'*30)
     x_test, y_test = data
-    index = np.argmax(y_test, 1) == args.digit
+    index = np.argmax(y_test, 1) == args['digit']
     number = np.random.randint(low=0, high=sum(index) - 1)
     x, y = x_test[index][number], y_test[index][number]
     x, y = np.expand_dims(x, 0), np.expand_dims(y, 0)
@@ -183,8 +183,8 @@ def manipulate_latent(model, data, args):
 
     img = combine_images(x_recons, height=16)
     image = img*255
-    Image.fromarray(image.astype(np.uint8)).save(args.save_dir + '/manipulate-%d.png' % args.digit)
-    print('manipulated result saved to %s/manipulate-%d.png' % (args.save_dir, args.digit))
+    Image.fromarray(image.astype(np.uint8)).save(args['save_dir'] + '/manipulate-%d.png' % args['digit'])
+    print('manipulated result saved to %s/manipulate-%d.png' % (args['save_dir'], args['digit']))
     print('-' * 30 + 'End: manipulate' + '-' * 30)
 
 
@@ -207,33 +207,39 @@ if __name__ == "__main__":
     from keras import callbacks
 
     # setting the hyper parameters
-    parser = argparse.ArgumentParser(description="Capsule Network on MNIST.")
-    parser.add_argument('--epochs', default=50, type=int)
-    parser.add_argument('--batch_size', default=100, type=int)
-    parser.add_argument('--lr', default=0.001, type=float,
-                        help="Initial learning rate")
-    parser.add_argument('--lr_decay', default=0.9, type=float,
-                        help="The value multiplied by lr at each epoch. Set a larger value for larger epochs")
-    parser.add_argument('--lam_recon', default=0.392, type=float,
-                        help="The coefficient for the loss of decoder")
-    parser.add_argument('-r', '--routings', default=3, type=int,
-                        help="Number of iterations used in routing algorithm. should > 0")
-    parser.add_argument('--shift_fraction', default=0.1, type=float,
-                        help="Fraction of pixels to shift at most in each direction.")
-    parser.add_argument('--debug', action='store_true',
-                        help="Save weights by TensorBoard")
-    parser.add_argument('--save_dir', default='./result')
-    parser.add_argument('-t', '--testing', action='store_true',
-                        help="Test the trained model on testing dataset")
-    parser.add_argument('--digit', default=5, type=int,
-                        help="Digit to manipulate")
-    parser.add_argument('-w', '--weights', default=None,
-                        help="The path of the saved weights. Should be specified when testing")
-    args = parser.parse_args()
+    #     parser = argparse.ArgumentParser(description="Capsule Network on MNIST.")
+    #     parser.add_argument('--epochs', default=50, type=int)
+    #     parser.add_argument('--batch_size', default=100, type=int)
+    #     parser.add_argument('--lr', default=0.001, type=float,
+    #                         help="Initial learning rate")
+    #     parser.add_argument('--lr_decay', default=0.9, type=float,
+    #                         help="The value multiplied by lr at each epoch. Set a larger value for larger epochs")
+    #     parser.add_argument('--lam_recon', default=0.392, type=float,
+    #                         help="The coefficient for the loss of decoder")
+    #     parser.add_argument('-r', '--routings', default=3, type=int,
+    #                         help="Number of iterations used in routing algorithm. should > 0")
+    #     parser.add_argument('--shift_fraction', default=0.1, type=float,
+    #                         help="Fraction of pixels to shift at most in each direction.")
+    #     parser.add_argument('--debug', action='store_true',
+    #                         help="Save weights by TensorBoard")
+    #     parser.add_argument('--save_dir', default='./result')
+    #     parser.add_argument('-t', '--testing', action='store_true',
+    #                         help="Test the trained model on testing dataset")
+    #     parser.add_argument('--digit', default=5, type=int,
+    #                         help="Digit to manipulate")
+    #     parser.add_argument('-w', '--weights', default=None,
+    #                         help="The path of the saved weights. Should be specified when testing")
+    #     args = parser.parse_args()
+
+    args = {'epochs': 50, 'batch_size': 100, 'lr': 0.001,
+            'lr_decay': 0.9, 'lam_recon': 0.392,
+            'routings': 3, 'shift_fraction': 0.1,
+            'debug': 1, 'save_dir': './result', 'testing': 0, 'digit': 5, 'weights': None}
+
     print(args)
 
-    if not os.path.exists(args.save_dir):
-        os.makedirs(args.save_dir)
+    if not os.path.exists(args['save_dir']):
+        os.makedirs(args['save_dir'])
 
     # load data
     (x_train, y_train), (x_test, y_test) = load_mnist()
@@ -241,16 +247,20 @@ if __name__ == "__main__":
     # define model
     model, eval_model, manipulate_model = CapsNet(input_shape=x_train.shape[1:],
                                                   n_class=len(np.unique(np.argmax(y_train, 1))),
-                                                  routings=args.routings)
+                                                  routings=args['routings'])
     model.summary()
 
     # train or test
-    if args.weights is not None:  # init the model weights with provided one
-        model.load_weights(args.weights)
-    if not args.testing:
+    if args['weights'] is not None:  # init the model weights with provided one
+        model.load_weights(args['weights'])
+    if not args['testing']: # training
+        from timeit import default_timer as timer
+        st = timer()
         train(model=model, data=((x_train, y_train), (x_test, y_test)), args=args)
+        en = timer()
+        print('Elapsing time in second: ', en-st)
     else:  # as long as weights are given, will run testing
-        if args.weights is None:
+        if args['weights'] is None:
             print('No weights are provided. Will test using random initialized weights.')
         manipulate_latent(manipulate_model, (x_test, y_test), args)
         test(model=eval_model, data=(x_test, y_test), args=args)
