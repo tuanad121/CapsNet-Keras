@@ -1,18 +1,18 @@
 """
 Keras implementation of CapsNet in Hinton's paper Dynamic Routing Between Capsules.
 The current version maybe only works for TensorFlow backend. Actually it will be straightforward to re-write to TF code.
-Adopting to other backends should be easy, but I have not tested this. 
+Adopting to other backends should be easy, but I have not tested this.
 
 Usage:
        python capsulenet.py
        python capsulenet.py --epochs 50
        python capsulenet.py --epochs 50 --routings 3
        ... ...
-       
+
 Result:
     Validation accuracy > 99.5% after 20 epochs. Converge to 99.66% after 50 epochs.
     About 110 seconds per epoch on a single GTX1070 GPU card
-    
+
 Author: Xifeng Guo, E-mail: `guoxifeng1990@163.com`, Github: `https://github.com/XifengGuo/CapsNet-Keras`
 """
 
@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 from utils import combine_images
 from PIL import Image
 from capsulelayers import CapsuleLayer, PrimaryCap, Length, Mask
+
+from data import Data
 
 K.set_image_data_format('channels_last')
 
@@ -60,7 +62,7 @@ def CapsNet(input_shape, n_class, routings):
 
     # Shared Decoder model in training and prediction
     decoder = models.Sequential(name='decoder')
-    decoder.add(layers.Dense(512, activation='relu', input_dim=16*n_class))
+    decoder.add(layers.Dense(512, activation='relu', input_dim=16 * n_class))
     decoder.add(layers.Dense(1024, activation='relu'))
     decoder.add(layers.Dense(np.prod(input_shape), activation='sigmoid'))
     decoder.add(layers.Reshape(target_shape=input_shape, name='out_recon'))
@@ -150,10 +152,10 @@ def train(model, data, args):
 def test(model, data, args):
     x_test, y_test = data
     y_pred, x_recon = model.predict(x_test, batch_size=100)
-    print('-'*30 + 'Begin: test' + '-'*30)
-    print('Test acc:', np.sum(np.argmax(y_pred, 1) == np.argmax(y_test, 1))/y_test.shape[0])
+    print('-' * 30 + 'Begin: test' + '-' * 30)
+    print('Test acc:', np.sum(np.argmax(y_pred, 1) == np.argmax(y_test, 1)) / y_test.shape[0])
 
-    img = combine_images(np.concatenate([x_test[:50],x_recon[:50]]))
+    img = combine_images(np.concatenate([x_test[:50], x_recon[:50]]))
     image = img * 255
     Image.fromarray(image.astype(np.uint8)).save(args['save_dir'] + "/real_and_recon.png")
     print()
@@ -164,7 +166,7 @@ def test(model, data, args):
 
 
 def manipulate_latent(model, data, args):
-    print('-'*30 + 'Begin: manipulate' + '-'*30)
+    print('-' * 30 + 'Begin: manipulate' + '-' * 30)
     x_test, y_test = data
     index = np.argmax(y_test, 1) == args['digit']
     number = np.random.randint(low=0, high=sum(index) - 1)
@@ -175,29 +177,17 @@ def manipulate_latent(model, data, args):
     for dim in range(16):
         for r in [-0.25, -0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25]:
             tmp = np.copy(noise)
-            tmp[:,:,dim] = r
+            tmp[:, :, dim] = r
             x_recon = model.predict([x, y, tmp])
             x_recons.append(x_recon)
 
     x_recons = np.concatenate(x_recons)
 
     img = combine_images(x_recons, height=16)
-    image = img*255
+    image = img * 255
     Image.fromarray(image.astype(np.uint8)).save(args['save_dir'] + '/manipulate-%d.png' % args['digit'])
     print('manipulated result saved to %s/manipulate-%d.png' % (args['save_dir'], args['digit']))
     print('-' * 30 + 'End: manipulate' + '-' * 30)
-
-
-def load_mnist():
-    # the data, shuffled and split between train and test sets
-    from keras.datasets import mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-
-    x_train = x_train.reshape(-1, 28, 28, 1).astype('float32') / 255.
-    x_test = x_test.reshape(-1, 28, 28, 1).astype('float32') / 255.
-    y_train = to_categorical(y_train.astype('float32'))
-    y_test = to_categorical(y_test.astype('float32'))
-    return (x_train, y_train), (x_test, y_test)
 
 
 if __name__ == "__main__":
@@ -242,7 +232,8 @@ if __name__ == "__main__":
         os.makedirs(args['save_dir'])
 
     # load data
-    (x_train, y_train), (x_test, y_test) = load_mnist()
+    data = Data('/Users/dintu/work_sp/data/')
+    (x_train, y_train), (x_valid, y_valid) = data.create_data('train')
 
     # define model
     model, eval_model, manipulate_model = CapsNet(input_shape=x_train.shape[1:],
@@ -253,13 +244,15 @@ if __name__ == "__main__":
     # train or test
     if args['weights'] is not None:  # init the model weights with provided one
         model.load_weights(args['weights'])
-    if not args['testing']: # training
+    if not args['testing']:  # training
         from timeit import default_timer as timer
+
         st = timer()
-        train(model=model, data=((x_train, y_train), (x_test, y_test)), args=args)
+        train(model=model, data=((x_train, y_train), (x_valid, y_valid)), args=args)
         en = timer()
-        print('Elapsing time in second: ', en-st)
+        print('Elapsing time in second: ', en - st)
     else:  # as long as weights are given, will run testing
+        x_test, y_test = data.create_data('test')
         if args['weights'] is None:
             print('No weights are provided. Will test using random initialized weights.')
         manipulate_latent(manipulate_model, (x_test, y_test), args)
